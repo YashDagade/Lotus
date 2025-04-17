@@ -19,3 +19,4 @@ We propose a flow-based generative model that operates on a latent representatio
 - Semantic preservation
 - Conditional generation
 
+Will be updated soon with more details :D
