@@ -1,0 +1,13 @@
+torch>=2.0
+esm>=1.5
+biopython
+tqdm
+numpy
+scikit-learn
+wandb
+pyyaml
+hydra-core
+mmseqs2  # if available via conda
+einops>=0.6.0
+colabfold-batch  # for running AlphaFold predictions
+tensorflow-cpu  # required for colabfold

@@ -1,2 +1,6 @@
 # Ignore datasets directory
 datasets/
+wandb/
+# Ignore any file that starts with slurm
+slurm-*.out
+prompt.md
