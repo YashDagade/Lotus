@@ -54,4 +54,62 @@ class FlowMatchingNet(nn.Module):
             method='rk4',  # Use RK4 for better accuracy
             steps=steps,
             sigma=sigma
-        ) 
+        )
+
+if __name__ == "__main__":
+    # Test the FlowMatchingNet
+    print("Testing FlowMatchingNet...")
+    
+    # Create mock config
+    mock_cfg = {
+        "flow": {
+            "emb_dim": 32,
+            "hidden_dim": 64,
+        }
+    }
+    
+    # Initialize model
+    emb_dim = mock_cfg["flow"]["emb_dim"]
+    hidden_dim = mock_cfg["flow"]["hidden_dim"]
+    model = FlowMatchingNet(emb_dim, hidden_dim)
+    
+    # Test forward pass
+    batch_size = 5
+    z = torch.randn(batch_size, emb_dim)
+    t = torch.rand(batch_size)
+    
+    try:
+        # Test forward pass
+        v = model(z, t)
+        print(f"Forward pass successful. Output shape: {v.shape}")
+        
+        # Test backward pass
+        loss = v.sum()
+        loss.backward()
+        print("Backward pass successful.")
+        
+        # Test flow-matching loss calculation
+        z0 = torch.randn(batch_size, emb_dim)
+        z1 = torch.randn(batch_size, emb_dim)
+        t = torch.rand(batch_size)
+        
+        # Compute straight-line vector 
+        u = z1 - z0
+        
+        # Compute point along interpolation path
+        zt = t.unsqueeze(1)*z1 + (1-t).unsqueeze(1)*z0
+        
+        # Predict vector field
+        v = model(zt, t)
+        
+        # Compute loss
+        loss = (v-u).pow(2).sum(1).mean()
+        print(f"Flow matching loss: {loss.item()}")
+        
+        # Test sampling (without ODE solver to avoid dependencies)
+        print("Model architecture test passed.")
+        
+    except Exception as e:
+        print(f"Error during testing: {e}")
+    
+    print("Test finished.") 

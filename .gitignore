@@ -4,3 +4,15 @@ wandb/
 # Ignore any file that starts with slurm
 slurm-*.out
 prompt.md
+
+# Lotus env
+lotus_env/
+
+# conda_packages
+conda_pkgs/
+
+# cursor files
+.cursor/
+
+.tmp/
+.test_splits

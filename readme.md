@@ -87,9 +87,9 @@ LOTUS/
 git clone https://github.com/yashdagade/lotus.git
 cd lotus
 
-# Create a conda environment
-conda create -n lotus_env python=3.8
-conda activate lotus_env
+# activate conda env
+conda activate /home/hice1/pponnusamy7/scratch/Lotus/lotus_env
+
 
 # Install dependencies
 pip install -r requirements.txt

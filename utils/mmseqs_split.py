@@ -32,4 +32,38 @@ def split_clusters(fasta, out_dir, id_min=0.3, cov=0.8):
                     SeqIO.write(recs[seqid], fw, "fasta")
 
 if __name__=="__main__":
-    split_clusters(sys.argv[1], sys.argv[2]) 
+    # Test the split_clusters function
+    print("Testing mmseqs_split.py...")
+    
+    # Check if test_sequence.fasta exists
+    test_fasta = "test_sequence.fasta"
+    if not os.path.exists(test_fasta):
+        print(f"Error: {test_fasta} not found. Please create it first.")
+        sys.exit(1)
+    
+    # Create a test output directory
+    test_out_dir = "test_splits"
+    
+    try:
+        # For testing, use higher identity threshold since we only have one sequence
+        print(f"Splitting {test_fasta} into {test_out_dir}...")
+        split_clusters(test_fasta, test_out_dir, id_min=0.9, cov=0.9)
+        
+        # Check if splits were created
+        split_files = [f"{test_out_dir}/{split}.fasta" for split in ["train", "val", "test"]]
+        for file in split_files:
+            if os.path.exists(file):
+                print(f"Successfully created {file}")
+            else:
+                print(f"Failed to create {file}")
+                
+        print("Test completed.")
+    except Exception as e:
+        print(f"Error during testing: {e}")
+        
+    # Clean up test files
+    if os.path.exists("seqDB"):
+        subprocess.run("rm -rf seqDB clusterDB tmp clusters.tsv", shell=True)
+        print("Cleaned up temporary files.")
+    
+    print("Test finished.") 

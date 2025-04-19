@@ -189,3 +189,84 @@ def validate(model, cfg):
         return float(np.mean(bit_scores))
     else:
         return float(np.random.rand())  # Fallback 
+
+if __name__ == "__main__":
+    print("Testing validation functionality...")
+    
+    # Import locally to avoid circular imports
+    from generator.models import FlowMatchingNet
+    
+    # Create mock model and config
+    mock_cfg = {
+        "flow": {
+            "emb_dim": 32,
+            "hidden_dim": 64
+        },
+        "downstream": {
+            "num_samples": 2,
+            "use_structural_validation": False,  # Disable for testing
+            "ref_pdbs": [],
+            "hmm_profile": ""
+        },
+        "wandb": {
+            "project": "test"
+        }
+    }
+    
+    # Initialize model 
+    emb_dim = mock_cfg["flow"]["emb_dim"]
+    hidden_dim = mock_cfg["flow"]["hidden_dim"]
+    model = FlowMatchingNet(emb_dim, hidden_dim)
+    
+    try:
+        # Test validation with structural validation disabled
+        print("Testing validation with structural validation disabled...")
+        mock_validation_score = validate(model, mock_cfg)
+        print(f"Validation returned score: {mock_validation_score}")
+        
+        # Test individual validation functions
+        print("\nTesting TM-score calculation (mock)...")
+        
+        # Create temporary files for testing
+        with tempfile.NamedTemporaryFile(suffix=".pdb") as f1, \
+             tempfile.NamedTemporaryFile(suffix=".pdb") as f2:
+            
+            # Write mock PDB content
+            f1.write(b"MOCK PDB 1")
+            f2.write(b"MOCK PDB 2")
+            f1.flush()
+            f2.flush()
+            
+            # Test function
+            try:
+                score = calculate_tm_score(f1.name, f2.name)
+                print(f"TM-score calculation attempted: {score}")
+            except Exception as e:
+                print(f"TM-score calculation failed (expected if TMalign not installed): {e}")
+        
+        # Test extract_af_confidences (mock)
+        print("\nTesting extract_af_confidences (mock)...")
+        
+        with tempfile.NamedTemporaryFile(suffix=".json") as f:
+            # Write mock JSON content
+            mock_json = {
+                "ptm": 0.75,
+                "plddt": [80.5, 85.2, 90.1, 87.3]
+            }
+            f.write(json.dumps(mock_json).encode())
+            f.flush()
+            
+            try:
+                ptm, avg_plddt, plddt_list = extract_af_confidences(f.name)
+                print(f"Extracted pTM: {ptm}")
+                print(f"Extracted avg pLDDT: {avg_plddt}")
+                print(f"Extracted pLDDT values: {plddt_list}")
+            except Exception as e:
+                print(f"extract_af_confidences failed: {e}")
+        
+        print("\nAll validation tests completed.")
+        
+    except Exception as e:
+        print(f"Error during testing: {e}")
+    
+    print("Test finished.") 

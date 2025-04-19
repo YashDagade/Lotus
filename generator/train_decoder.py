@@ -165,26 +165,122 @@ def train_decoder(cfg):
     return decoder
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a decoder for latent embeddings")
-    parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
-    args = parser.parse_args()
-    
-    # Load config
-    cfg = yaml.safe_load(open(args.config))
-    
-    # Initialize wandb
-    wandb.init(
-        entity=cfg["wandb"]["entity"],
-        project=cfg["wandb"]["project"],
-        name=f"{cfg['wandb'].get('name', 'decoder_training')}",
-        config=cfg
-    )
-    
-    # Create models directory
-    os.makedirs("models", exist_ok=True)
-    
-    # Train decoder
-    decoder = train_decoder(cfg)
-    
-    # Finish wandb
-    wandb.finish() 
+    # Check if running as main script or testing
+    if len(os.sys.argv) > 1 and os.sys.argv[1] == "--test":
+        print("Running test mode for decoder training...")
+        
+        # Create mock config
+        mock_cfg = {
+            "decoder": {
+                "dim": 32,
+                "nhead": 4,
+                "dropout": 0.1,
+                "max_len": 50,
+                "batch_size": 4,
+                "learning_rate": 1e-4,
+                "max_epochs": 2  # Very short for testing
+            },
+            "wandb": {
+                "project": "test"
+            }
+        }
+        
+        try:
+            # Create mock embeddings
+            mock_embs = torch.randn(10, mock_cfg["decoder"]["dim"])
+            mock_data = {"embeddings": mock_embs, "ids": ["seq1", "seq2", "seq3", "seq4", "seq5", "seq6", "seq7", "seq8", "seq9", "seq10"]}
+            os.makedirs("dataset", exist_ok=True)
+            torch.save(mock_data, "dataset/mock_embeddings.pt")
+            
+            # Mock wandb
+            class MockWandb:
+                def log(self, data):
+                    print(f"W&B log: {data}")
+                
+                def init(self, **kwargs):
+                    print(f"W&B init: {kwargs}")
+                    return self
+                
+                def finish(self):
+                    print("W&B finish")
+            
+            # Store original wandb and replace with mock
+            original_wandb = wandb
+            wandb = MockWandb()
+            
+            # Mock data loading
+            original_torch_load = torch.load
+            
+            def mock_torch_load(path):
+                if "mock_embeddings.pt" in path or "cas9_embeddings.pt" in path:
+                    return mock_data
+                else:
+                    return original_torch_load(path)
+            
+            torch.load = mock_torch_load
+            
+            # Create models directory for testing
+            os.makedirs("models", exist_ok=True)
+            
+            # Run test training for 1-2 epochs
+            print("Starting mock decoder training...")
+            
+            # Monkey patch tqdm to move faster
+            original_tqdm = tqdm
+            tqdm = lambda x, **kwargs: x
+            
+            # Run training
+            decoder = train_decoder(mock_cfg)
+            print("Decoder training completed.")
+            
+            # Test the trained model
+            print("\nTesting trained decoder...")
+            test_input = torch.randn(2, 10, mock_cfg["decoder"]["dim"])
+            with torch.no_grad():
+                output = decoder(test_input)
+            print(f"Decoder output shape: {output.shape}")
+            
+            # Restore original functions
+            wandb = original_wandb
+            torch.load = original_torch_load
+            tqdm = original_tqdm
+            
+            print("\nAll decoder training tests completed.")
+            
+        except Exception as e:
+            print(f"Error during testing: {e}")
+            # Restore original functions
+            if 'original_wandb' in locals():
+                wandb = original_wandb
+            if 'original_torch_load' in locals():
+                torch.load = original_torch_load
+            if 'original_tqdm' in locals():
+                tqdm = original_tqdm
+        
+        print("Test finished.")
+        
+    else:
+        # Normal execution
+        parser = argparse.ArgumentParser(description="Train a decoder for latent embeddings")
+        parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
+        args = parser.parse_args()
+        
+        # Load config
+        cfg = yaml.safe_load(open(args.config))
+        
+        # Initialize wandb
+        wandb.init(
+            entity=cfg["wandb"]["entity"],
+            project=cfg["wandb"]["project"],
+            name=f"{cfg['wandb'].get('name', 'decoder_training')}",
+            config=cfg
+        )
+        
+        # Create models directory
+        os.makedirs("models", exist_ok=True)
+        
+        # Train decoder
+        decoder = train_decoder(cfg)
+        
+        # Finish wandb
+        wandb.finish() 

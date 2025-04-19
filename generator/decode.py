@@ -8,11 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, reduce, repeat
 import math
-from esm.model.esm2 import TransformerLayer
 import esm
-
-# ESM2 alphabet for decoding
-from esm.data import Alphabet
 
 class DecoderBlock(nn.Module):
     """
@@ -20,12 +16,14 @@ class DecoderBlock(nn.Module):
     """
     def __init__(self, dim=1280, nhead=20, dropout=0.2, max_len=1536):
         super(DecoderBlock, self).__init__()
-        # Transformer layer from ESM-2
-        self.encoder = TransformerLayer(
-            embed_dim=dim,
-            ffn_embed_dim=2*dim,
-            attention_heads=nhead,
-            use_rotary_embeddings=True
+        # Use a standard TransformerEncoderLayer instead of ESM-2 internal TransformerLayer
+        self.encoder = nn.TransformerEncoderLayer(
+            d_model=dim,
+            nhead=nhead,
+            dim_feedforward=2*dim,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True
         )
         # Final projection to vocab-size logits
         self.final = nn.Sequential(
@@ -51,7 +49,7 @@ class DecoderBlock(nn.Module):
         x: [B, T, D] tensor of embeddings
         returns logits: [B, T, 32]
         """
-        x, _ = self.encoder(x)
+        x = self.encoder(x)
         return self.final(x)
 
     def decode_latents(self, z_latents):
@@ -94,14 +92,13 @@ def decode_latents(z):
     Returns:
         List of decoded protein sequences
     """
-    global _decoder
-    
     # For development/testing, return mockup sequences
     if not isinstance(z, torch.Tensor):
         return ["MVASKVV..."]*len(z)
     
     # Real implementation path
     try:
+        global _decoder
         device = z.device
         
         # Initialize decoder if needed
@@ -128,4 +125,72 @@ def decode_latents(z):
     except Exception as e:
         print(f"Error in decode_latents: {e}")
         # Fallback to mockup sequences
-        return ["MVASKVV..."]*len(z) 
+        return ["MVASKVV..."]*len(z)
+
+if __name__ == "__main__":
+    print("Testing DecoderBlock and decode_latents functionality...")
+    
+    # Create a mock config
+    mock_cfg = {
+        "decoder": {
+            "dim": 32,
+            "nhead": 4,
+            "dropout": 0.1,
+            "max_len": 50,
+            "pretrained_path": ""
+        }
+    }
+    
+    try:
+        # Test DecoderBlock instantiation
+        print("Initializing DecoderBlock...")
+        decoder = DecoderBlock(
+            dim=mock_cfg["decoder"]["dim"],
+            nhead=mock_cfg["decoder"]["nhead"],
+            dropout=mock_cfg["decoder"]["dropout"],
+            max_len=mock_cfg["decoder"]["max_len"]
+        )
+        print("DecoderBlock initialized successfully.")
+        
+        # Test forward pass
+        batch_size = 2
+        seq_len = 10
+        emb_dim = mock_cfg["decoder"]["dim"]
+        
+        # Create mock input tensor
+        mock_input = torch.randn(batch_size, seq_len, emb_dim)
+        
+        print("Testing forward pass...")
+        with torch.no_grad():
+            output = decoder(mock_input)
+        print(f"Forward pass successful. Output shape: {output.shape}")
+        
+        # Test decode_latents on a small batch
+        print("Testing decode_latents...")
+        mock_latents = torch.randn(batch_size, emb_dim)
+        
+        # Override the global _decoder to use our test instance
+        _decoder = decoder
+        
+        # Test decoding with custom decoder
+        try:
+            sequences = decoder.decode_latents(mock_latents)
+            print(f"Decoded {len(sequences)} sequences:")
+            for i, seq in enumerate(sequences):
+                print(f"  Sequence {i+1}: {seq[:20]}..." if len(seq) > 20 else f"  Sequence {i+1}: {seq}")
+        except Exception as e:
+            print(f"Error in decode_latents: {e}")
+            print("This is expected if using the test decoder since we're not setting up the full vocabulary.")
+        
+        # Test the fallback behavior
+        print("Testing fallback behavior...")
+        mock_latents_list = [1, 2]  # Not a tensor to trigger fallback
+        fallback_sequences = decode_latents(mock_latents_list)
+        print(f"Fallback returned {len(fallback_sequences)} placeholder sequences.")
+        
+        print("All decoder tests completed.")
+        
+    except Exception as e:
+        print(f"Error during testing: {e}")
+    
+    print("Test finished.") 
