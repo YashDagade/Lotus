@@ -2,6 +2,13 @@
 dataset_path: dataset/cas9_uniprot.fasta
 esm_model: "esm2_t33_650M_UR50D"
 
+# Output directories
+output:
+  embeddings: "outs/embeddings"
+  models: "outs/models"
+  samples: "outs/samples"
+  mmseqs2: "outs/mmseqs2"
+  logs: "logs"
 
 # MMseqs2 clustering
 cluster:
@@ -23,7 +30,7 @@ sampling:
   num_samples: 100        # Number of sequences to generate after training
   method: "rk4"           # Integration method: 'euler', 'heun', or 'rk4'
   steps: 100              # Number of integration steps
-  output_dir: "samples"   # Directory to save generated sequences
+  output_dir: "outs/samples"   # Directory to save generated sequences
   
 # Downstream (AlphaFold & TM‑score) settings
 downstream:
@@ -51,4 +58,4 @@ decoder:
 wandb:
   entity: "programmablebio"
   project: "cas9_flow" 
-  name: "latent_flow_smoke_run"
+  name: "latent_flow_run_2"

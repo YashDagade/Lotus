@@ -148,14 +148,15 @@ class ODESolver:
             verbose: Whether to show progress bar
             
         Returns:
-            Tensor of shape [num_samples, D] with sampled latents
-            If return_trajectory=True, returns [steps+1, num_samples, D]
+            Tensor of shape [num_samples, seq_len, emb_dim] with sampled latents
+            If return_trajectory=True, returns [steps+1, num_samples, seq_len, emb_dim]
         """
         device = next(self.model.parameters()).device
         emb_dim = self.cfg["flow"]["emb_dim"]
+        seq_len = self.cfg["flow"].get("seq_len", 1024)  # Default sequence length if not specified
         
         # Start from random Gaussian noise
-        z0 = torch.randn(num_samples, emb_dim, device=device) * sigma
+        z0 = torch.randn(num_samples, seq_len, emb_dim, device=device) * sigma
         
         # Choose integration method
         if method == 'euler':

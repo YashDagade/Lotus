@@ -10,6 +10,15 @@ from generator.models import FlowMatchingNet
 
 # 1. Load config & W&B
 cfg = yaml.safe_load(open("config.yaml"))
+
+# Create output directories
+os.makedirs("outs", exist_ok=True)
+os.makedirs("outs/mmseqs2", exist_ok=True)  # For MMseqs2 files
+os.makedirs("outs/embeddings", exist_ok=True)  # For ESM embeddings
+os.makedirs("outs/models", exist_ok=True)  # For saved models
+os.makedirs("outs/samples", exist_ok=True)  # For generated sequences
+os.makedirs("logs", exist_ok=True)  # For log files
+
 wandb.init(entity=cfg["wandb"]["entity"],
            project=cfg["wandb"]["project"],
            config=cfg,
@@ -21,7 +30,7 @@ split_clusters(cfg["dataset_path"], "dataset/splits",
                cfg["cluster"]["coverage"])
 
 # 3. Embed
-embed(cfg["dataset_path"], "dataset/cas9_embeddings.pt", cfg["esm_model"])
+embed(cfg["dataset_path"], "outs/embeddings/cas9_embeddings.pt", cfg["esm_model"])
 
 # 4. Train FM
 model = train(cfg)

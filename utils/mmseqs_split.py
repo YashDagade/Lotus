@@ -6,12 +6,22 @@ import random, os, sys
 
 def split_clusters(fasta, out_dir, id_min=0.3, cov=0.8):
     os.makedirs(out_dir, exist_ok=True)
+    # Create mmseqs2 output directory
+    mmseqs_dir = os.path.join("outs", "mmseqs2")
+    os.makedirs(mmseqs_dir, exist_ok=True)
+    
+    # Use mmseqs_dir for all temporary and cluster files
+    seqdb_path = os.path.join(mmseqs_dir, "seqDB")
+    clusterdb_path = os.path.join(mmseqs_dir, "clusterDB")
+    tmp_path = os.path.join(mmseqs_dir, "tmp")
+    clusters_tsv = os.path.join(mmseqs_dir, "clusters.tsv")
+    
     # create DB & cluster
-    subprocess.run(f"mmseqs createdb {fasta} seqDB", shell=True, check=True)
-    subprocess.run(f"mmseqs cluster seqDB clusterDB tmp --min-seq-id {id_min} -c {cov}", shell=True, check=True)
-    subprocess.run("mmseqs createtsv seqDB seqDB clusterDB clusters.tsv", shell=True, check=True)
+    subprocess.run(f"mmseqs createdb {fasta} {seqdb_path}", shell=True, check=True)
+    subprocess.run(f"mmseqs cluster {seqdb_path} {clusterdb_path} {tmp_path} --min-seq-id {id_min} -c {cov}", shell=True, check=True)
+    subprocess.run(f"mmseqs createtsv {seqdb_path} {seqdb_path} {clusterdb_path} {clusters_tsv}", shell=True, check=True)
 
-    df = pd.read_csv("clusters.tsv", sep="\t", names=["seq","seq2","cluster"])
+    df = pd.read_csv(clusters_tsv, sep="\t", names=["seq","seq2","cluster"])
     clusters = df.cluster.unique().tolist()
     random.shuffle(clusters)
     n = len(clusters)
@@ -30,6 +40,10 @@ def split_clusters(fasta, out_dir, id_min=0.3, cov=0.8):
             for seqid, clu in mapping.items():
                 if clu in clset:
                     SeqIO.write(recs[seqid], fw, "fasta")
+                    
+    # Clean up temporary files if needed
+    if os.path.exists(tmp_path):
+        subprocess.run(f"rm -rf {tmp_path}", shell=True)
 
 if __name__=="__main__":
     # Test the split_clusters function
@@ -62,8 +76,9 @@ if __name__=="__main__":
         print(f"Error during testing: {e}")
         
     # Clean up test files
-    if os.path.exists("seqDB"):
-        subprocess.run("rm -rf seqDB clusterDB tmp clusters.tsv", shell=True)
+    mmseqs_dir = os.path.join("outs", "mmseqs2")
+    if os.path.exists(mmseqs_dir):
+        subprocess.run(f"rm -rf {mmseqs_dir}", shell=True)
         print("Cleaned up temporary files.")
     
     print("Test finished.") 

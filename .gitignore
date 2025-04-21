@@ -14,5 +14,11 @@ conda_pkgs/
 # cursor files
 .cursor/
 
-.tmp/
-.test_splits
+tmp/
+test_splits
+
+
+dataset/
+
+
+outs/
