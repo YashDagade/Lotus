@@ -1,76 +1,83 @@
-import torch, esm
+import torch
+from transformers import AutoModelForMaskedLM, AutoTokenizer
 from Bio import SeqIO
 from tqdm import tqdm
 import argparse
 import os
 import sys
 
-def embed(fasta, out_pt, model_name):
-    # Updated model loading to handle attribute error
-    try:
-        # Use getattr to access the model from esm.pretrained if it exists
-        model_fn = getattr(esm.pretrained, model_name, None)
-        if model_fn is not None:
-            model, alphabet = model_fn()
-        elif model_name == "esm2_t33_650M_UR50D":
-            model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-        elif model_name == "esm2_t6_8M_UR50D":
-            model, alphabet = esm.pretrained.esm2_t6_8M_UR50D()
-        else:
-            raise ValueError(f"Model {model_name} not supported or not found")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load ESM model {model_name}: {e}")
+def embed(fasta, out_pt, model_name="facebook/esm2_t33_650M_UR50D"):
+    """
+    Generate embeddings for sequences in a FASTA file using the ESM-2 model
+    from HuggingFace transformers.
     
-    model.eval()
-    batch_converter = alphabet.get_batch_converter()
-
-    recs = [(r.id, str(r.seq)) for r in SeqIO.parse(fasta,"fasta")]
-    embs, ids = [], []
-    for i in tqdm(range(0, len(recs), 8)):
-        batch = recs[i:i+8]
-        labels, seqs, toks = batch_converter(batch)
-        with torch.no_grad():
-            out = model(toks, repr_layers=[model.num_layers])
-        rep = out["representations"][model.num_layers].mean(1)
-        embs.append(rep.cpu()); ids += labels
-    embs = torch.cat(embs,0)
-    torch.save({"ids":ids,"embeddings":embs}, out_pt)
-
-if __name__=="__main__":
-    # Use argparse if provided with args
-    if len(sys.argv) > 1:
-        p=argparse.ArgumentParser()
-        p.add_argument("--fasta"); p.add_argument("--out"); p.add_argument("--model")
-        args=p.parse_args()
-        embed(args.fasta, args.out, args.model)
-    else:
-        # Test embedding functionality
-        print("Testing embed_sequences.py...")
+    Args:
+        fasta: Path to the FASTA file
+        out_pt: Path to save the embeddings
+        model_name: Name of the ESM-2 model to use
+    """
+    print(f"Loading model {model_name}...")
+    # Load ESM model and tokenizer
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Load model and tokenizer
+    model = AutoModelForMaskedLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = model.to(device)
+    
+    # Load sequences from FASTA
+    records = list(SeqIO.parse(fasta, "fasta"))
+    print(f"Processing {len(records)} sequences...")
+    
+    # Process sequences in batches
+    all_embeddings = []
+    all_ids = []
+    batch_size = 1  # Process one sequence at a time due to potentially long sequences
+    
+    for i in tqdm(range(0, len(records), batch_size)):
+        batch_records = records[i:i+batch_size]
         
-        # Check if test_sequence.fasta exists
-        test_fasta = "test_sequence.fasta"
-        if not os.path.exists(test_fasta):
-            print(f"Error: {test_fasta} not found. Please create it first.")
-            sys.exit(1)
-        
-        test_output = "test_embeddings.pt"
-        test_model = "esm2_t6_8M_UR50D"  # Use smaller model for testing
-        
-        print(f"Embedding {test_fasta} with {test_model}...")
-        try:
-            embed(test_fasta, test_output, test_model)
+        for record in batch_records:
+            seq_id = record.id
+            sequence = str(record.seq)
             
-            # Verify the output file was created and contains expected data
-            if os.path.exists(test_output):
-                data = torch.load(test_output)
-                if "ids" in data and "embeddings" in data:
-                    print(f"Successfully created embeddings of shape: {data['embeddings'].shape}")
-                    print(f"IDs: {data['ids']}")
-                else:
-                    print("Output file is missing expected keys.")
-            else:
-                print(f"Failed to create {test_output}")
-        except Exception as e:
-            print(f"Error during testing: {e}")
-        
-        print("Test finished.") 
+            # Skip sequences that are too long for the model
+            if len(sequence) > model.config.max_position_embeddings - 2:  # Account for special tokens
+                print(f"Skipping {seq_id} - too long ({len(sequence)} > {model.config.max_position_embeddings-2})")
+                continue
+                
+            # Tokenize and move to device
+            inputs = tokenizer(sequence, return_tensors="pt")
+            inputs = {key: val.to(device) for key, val in inputs.items()}
+            
+            # Get embeddings
+            with torch.no_grad():
+                outputs = model(**inputs, output_hidden_states=True)
+                # Get last layer embeddings, remove special tokens (first and last)
+                esm_embeddings = outputs.hidden_states[-1]
+                esm_embeddings = esm_embeddings[:, 1:-1, :]  # [batch, seq_len, emb_dim]
+                
+                # Save embeddings and ID
+                all_embeddings.append(esm_embeddings.cpu())
+                all_ids.append(seq_id)
+    
+    # Concatenate all embeddings
+    if all_embeddings:
+        embeddings = torch.cat(all_embeddings, dim=0)
+        # Save embeddings and IDs
+        print(f"Saving embeddings with shape {embeddings.shape} to {out_pt}")
+        torch.save({"ids": all_ids, "embeddings": embeddings}, out_pt)
+        print(f"Successfully saved embeddings for {len(all_ids)} sequences")
+    else:
+        print("No embeddings were generated. Check if all sequences were skipped.")
+
+if __name__ == "__main__":
+    # Use argparse if provided with args
+    p = argparse.ArgumentParser()
+    p.add_argument("--fasta", help="Path to FASTA file")
+    p.add_argument("--out", help="Path to output file")
+    p.add_argument("--model", default="facebook/esm2_t33_650M_UR50D", help="ESM model name")
+    args = p.parse_args()
+    embed(args.fasta, args.out, args.model)
+    

@@ -1,6 +1,8 @@
 torch>=2.0
 esm>=1.5
 biopython
+Bio
+fairesm
 tqdm
 numpy
 scikit-learn

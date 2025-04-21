@@ -1,61 +1,60 @@
-# Global config for run_experiment.py
+# Global paths
 dataset_path: dataset/cas9_uniprot.fasta
-esm_model: "esm2_t33_650M_UR50D"
+train_embeddings_path: outs/embeddings/train_cas9_embeddings.pt
+val_embeddings_path: outs/embeddings/val_cas9_embeddings.pt
+best_model_path: outs/models/best_flow.pt
 
-# Output directories
-output:
-  embeddings: "outs/embeddings"
-  models: "outs/models"
-  samples: "outs/samples"
-  mmseqs2: "outs/mmseqs2"
-  logs: "logs"
+# Directory structure
+dirs:
+  embeddings: outs/embeddings
+  models: outs/models
+  samples: outs/samples
+  mmseqs: outs/mmseqs2
+  logs: logs
+
+# ESM model configuration
+esm_model: facebook/esm2_t33_650M_UR50D
 
 # MMseqs2 clustering
 cluster:
+  splits_dir: dataset/splits
   min_seq_id: 0.3
   coverage: 0.8
+  frac_train: 0.8
+  frac_val:   0.1
+  seed:       42
+  cleanup:    true
 
-# Flow‑matching training hyperparams
+# Flow-matching hyperparameters
 flow:
-  emb_dim: 1280            # ESM2 hidden size
+  emb_dim: 1280
   hidden_dim: 1024
   batch_size: 64
   learning_rate: 1e-4
-  max_epochs: 300
-  val_freq: 5              # epochs
+  max_epochs: 500
+  val_freq: 5
   early_stop_patience: 3
+  seq_len: 1500
 
 # Sampling configuration
 sampling:
-  num_samples: 100        # Number of sequences to generate after training
-  method: "rk4"           # Integration method: 'euler', 'heun', or 'rk4'
-  steps: 100              # Number of integration steps
-  output_dir: "outs/samples"   # Directory to save generated sequences
-  
-# Downstream (AlphaFold & TM‑score) settings
+  num_samples: 100
+  method: rk4
+  steps: 100
+  output_dir: outs/samples
+
+# Downstream evaluation
 downstream:
   num_samples: 10
-  num_recycles: 1
-  model_type: "AlphaFold2-ptm"
   use_structural_validation: true
-  ref_pdbs: []  # Paths to reference PDBs for TM-score computation
-  hmm_profile: ""  # Path to HMM profile for domain validation
-  
-# Decoder settings
-decoder:
-  dim: 1280
-  nhead: 20
-  dropout: 0.2
-  max_len: 1536  # Maximum sequence length to generate
-  pretrained_path: ""  # Optional path to pretrained decoder weights
-  # To train the decoder, uncomment and set these:
-  # train: true
-  # learning_rate: 1e-4
-  # batch_size: 32
-  # max_epochs: 100
+  ref_pdbs: []
+  hmm_profile: ""
+  num_recycles: 1
+  model_type: AlphaFold2-ptm
 
-# W&B
+
+# W&B logging
 wandb:
-  entity: "programmablebio"
-  project: "cas9_flow" 
-  name: "latent_flow_run_2"
+  entity: programmablebio
+  project: cas9_flow
+  name: latent_flow_run_3

@@ -42,6 +42,7 @@ LOTUS (Latent flOw-matching for proTein seqUence generationS) is a computational
 - [How to Run](#how-to-run)
 - [Configuration](#configuration)
 - [Customization](#customization)
+- [Testing](#testing)
 
 ## 🌟 Overview
 
@@ -532,3 +533,108 @@ To view results:
 1. Create an account at [wandb.ai](https://wandb.ai)
 2. Update the W&B configuration in `config.yaml`
 3. Access your project dashboard at `https://wandb.ai/[entity]/[project]`
+
+## 🧪 Testing
+
+LOTUS includes a comprehensive test suite to verify all components of the pipeline. The `test_all.py` script runs a series of validation tests on each module to ensure functionality.
+
+### Running Tests
+
+```bash
+# Run all tests
+python test_all.py
+
+# Run a specific module test
+python -m generator.embed_sequences  # Test embedding generation
+python -m generator.decode           # Test sequence decoder
+```
+
+### How the Test Suite Works
+
+The test framework in `test_all.py` implements a rigorous validation approach:
+
+1. **Test Environment Setup**:
+   - Creates a temporary test directory with all necessary folders
+   - Generates a minimal test configuration
+   - Uses a small test protein sequence
+
+2. **Validation Functions**:
+   - Each module has specific success criteria beyond just return codes
+   - For example, embedding tests check that valid embeddings were created
+   - Decoder tests verify actual sequence generation
+
+3. **Real Functionality Testing**:
+   - Tests perform actual operations rather than using mock or random data
+   - Sequence validation uses authentic amino acid validation
+   - Where possible, real protein structure evaluation is performed
+
+4. **Meaningful Reporting**:
+   - Detailed output for debugging
+   - Clear success/failure indicators
+   - Summary table of all test results
+
+5. **Test Components**:
+   - **MMseqs2 Split**: Tests sequence clustering functionality
+   - **ESM-2 Embedding**: Tests protein embedding generation
+   - **Flow Matching Network**: Tests model architecture and training
+   - **ODE Solvers**: Tests numerical integration methods
+   - **Decoder**: Tests latent→sequence conversion
+   - **Validation**: Tests structure prediction and evaluation
+   - **Downstream Evaluation**: Tests generated sequence assessment
+
+### Interpreting Test Results
+
+A successful test run will show:
+
+```
+================================================================================
+                                  Test Summary                                  
+================================================================================
+MMseqs2 Split: ✅ PASSED
+ESM-2 Embedding: ✅ PASSED
+Flow Matching Network: ✅ PASSED
+ODE Solvers: ✅ PASSED
+Decoder: ✅ PASSED
+Validation: ✅ PASSED
+Downstream Evaluation: ✅ PASSED
+
+🎉 All tests passed! The LOTUS system is ready to run.
+```
+
+If tests fail, check:
+1. All dependencies are installed
+2. Paths are configured correctly
+3. GPU/CPU resources are sufficient for model operations
+
+### Adding New Tests
+
+To add a new test to a module:
+
+1. Add a `if __name__ == "__main__":` block to your module
+2. Implement test functionality that exercises core features
+3. Print clear success/failure messages
+4. Add a validation function in `test_all.py`
+
+Example of a good test function:
+
+```python
+if __name__ == "__main__":
+    print("Testing my_module functionality...")
+    
+    try:
+        # Test actual functionality (not mocks or random values)
+        result = my_function(test_input)
+        
+        # Verify result validity
+        is_valid = validate_result(result)
+        
+        if is_valid:
+            print("Test successful: Valid output generated")
+        else:
+            print("Test failed: Invalid output")
+            
+    except Exception as e:
+        print(f"Error during testing: {e}")
+    
+    print("Test finished.")
+```

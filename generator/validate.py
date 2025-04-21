@@ -7,9 +7,9 @@ from pathlib import Path
 import torch
 import numpy as np
 import wandb
-from colabfold.batch import run as colabfold_run
 
 from .decode import decode_latents
+from .solver import ODESolver
 
 
 def calculate_tm_score(pred_pdb: str, ref_pdb: str) -> float:
@@ -66,21 +66,84 @@ def validate(model, cfg):
      6. Log all metrics to W&B.
     Returns average TM-score for early stopping.
     """
-    # For initial development or if some dependencies are missing,
-    # fall back to a simple random metric
+    # Import needed modules
+    import os
+    import tempfile
+    from pathlib import Path
+    import numpy as np
+    import wandb
+    
+    # Import local modules
+    from .decode import decode_latents
+    from .solver import ODESolver
+    
+    # Check if dependencies are available
+    has_colabfold = False
+    try:
+        from colabfold.batch import run as colabfold_run
+        has_colabfold = True
+    except ImportError:
+        print("ColabFold not available, structural validation metrics will be limited")
+    
+    # For testing mode, perform a simplified but still meaningful validation
     if not cfg.get("downstream", {}).get("use_structural_validation", True):
-        return float(np.random.rand())
+        print("Structural validation disabled, performing simplified validation")
+        # Create a solver for the model
+        solver = ODESolver(model, cfg)
         
+        # Sample a small batch of latents
+        num_samples = cfg["downstream"].get("num_samples", 5)
+        zs = solver.sample_latents(num_samples)
+        
+        # Attempt to decode sequences (this is a real test)
+        try:
+            sequences = decode_latents(zs)
+            # Check if sequences were generated properly
+            valid_sequences = [seq for seq in sequences if len(seq) > 10 and not seq.startswith("MOCK")]
+            seq_quality = len(valid_sequences) / max(1, len(sequences))
+            print(f"Generated {len(valid_sequences)} valid sequences out of {len(sequences)}")
+            
+            # Check for sequence validity (simple AA composition check)
+            valid_aas = set("ACDEFGHIKLMNPQRSTVWY")
+            aa_validity = []
+            for seq in valid_sequences:
+                valid_letters = sum(1 for aa in seq if aa in valid_aas)
+                aa_validity.append(valid_letters / max(1, len(seq)))
+            
+            if aa_validity:
+                avg_validity = sum(aa_validity) / len(aa_validity)
+                print(f"Average sequence validity: {avg_validity:.4f}")
+                # Log to wandb
+                wandb.log({
+                    "val/seq_quality": seq_quality,
+                    "val/aa_validity": avg_validity
+                })
+                return avg_validity  # Return a meaningful metric
+            else:
+                print("No valid sequences generated")
+                return 0.0  # Return a poor score to indicate failure
+                
+        except Exception as e:
+            print(f"Error in sequence decoding: {e}")
+            return 0.0  # Return a poor score to indicate failure
+    
+    # Main validation path with structural validation
     ref_pdbs = cfg["downstream"].get("ref_pdbs", [])  # list of paths
     hmm_profile = cfg["downstream"].get("hmm_profile", "")
     num_samples = cfg["downstream"].get("num_samples", 5)
     fold_cfg = cfg["downstream"]
 
     # 1. Sample and decode
-    # Use the model's sample_latents method
-    zs = model.sample_latents(num_samples)
+    solver = ODESolver(model, cfg)
+    zs = solver.sample_latents(num_samples)
     sequences = decode_latents(zs)
 
+    # Check if we got valid sequences
+    valid_sequences = [seq for seq in sequences if len(seq) > 10 and not seq.startswith("MOCK")]
+    if not valid_sequences:
+        print("No valid sequences generated, returning poor score")
+        return 0.0
+        
     # 2. Write FASTA
     workdir = tempfile.mkdtemp(prefix="val_")
     fasta_path = os.path.join(workdir, "val.fasta")
@@ -89,50 +152,50 @@ def validate(model, cfg):
             fw.write(f">val_{i}\n{seq}\n")
 
     # 3. Predict structures (if ColabFold is available)
-    try:
-        colabfold_run(
-            fasta_path,
-            result_dir=workdir,
-            model_type=fold_cfg.get("model_type", "AlphaFold2-ptm"),
-            use_templates=False,
-            use_amber=False,
-            num_models=1,
-            num_recycles=fold_cfg.get("num_recycles", 1),
-            keep_existing_results=False
-        )
-    except Exception as e:
-        print(f"Error running ColabFold: {e}")
-        return float(np.random.rand())  # Fallback
-
     tm_scores_all = []
     pTMs, avg_pLDDTs, all_plddt = [], [], []
-
-    # Collect metrics
-    for i in range(num_samples):
-        pdb_file = Path(workdir) / f"val_{i}_unrelaxed_rank_0.pdb"
-        score_json = Path(workdir) / f"score_model_1_ptm.json"
-        
-        if not pdb_file.exists() or not score_json.exists():
-            continue
-
-        # TM-score: best across references (if TM-align and refs are available)
-        if ref_pdbs:
-            try:
-                best_tm = max(
-                    calculate_tm_score(str(pdb_file), ref) for ref in ref_pdbs
-                )
-                tm_scores_all.append(best_tm)
-            except Exception as e:
-                print(f"Error calculating TM-score: {e}")
-
-        # AF confidences
+    
+    if has_colabfold:
         try:
-            pTM, avg_pLDDT, plddt = extract_af_confidences(str(score_json))
-            pTMs.append(pTM)
-            avg_pLDDTs.append(avg_pLDDT)
-            all_plddt.extend(plddt)
+            colabfold_run(
+                fasta_path,
+                result_dir=workdir,
+                model_type=fold_cfg.get("model_type", "AlphaFold2-ptm"),
+                use_templates=False,
+                use_amber=False,
+                num_models=1,
+                num_recycles=fold_cfg.get("num_recycles", 1),
+                keep_existing_results=False
+            )
         except Exception as e:
-            print(f"Error extracting AF confidences: {e}")
+            print(f"Error running ColabFold: {e}")
+
+        # Collect metrics
+        for i in range(num_samples):
+            pdb_file = Path(workdir) / f"val_{i}_unrelaxed_rank_0.pdb"
+            score_json = Path(workdir) / f"score_model_1_ptm.json"
+            
+            if not pdb_file.exists() or not score_json.exists():
+                continue
+
+            # TM-score: best across references (if TM-align and refs are available)
+            if ref_pdbs:
+                try:
+                    best_tm = max(
+                        calculate_tm_score(str(pdb_file), ref) for ref in ref_pdbs
+                    )
+                    tm_scores_all.append(best_tm)
+                except Exception as e:
+                    print(f"Error calculating TM-score: {e}")
+
+            # AF confidences
+            try:
+                pTM, avg_pLDDT, plddt = extract_af_confidences(str(score_json))
+                pTMs.append(pTM)
+                avg_pLDDTs.append(avg_pLDDT)
+                all_plddt.extend(plddt)
+            except Exception as e:
+                print(f"Error extracting AF confidences: {e}")
 
     # 4. HMM bit-scores on sequences (if HMMER and profile are available)
     bit_scores = []
@@ -145,6 +208,17 @@ def validate(model, cfg):
     # 5. Compute summary stats
     metrics = {}
     
+    # Always include sequence metrics
+    valid_aas = set("ACDEFGHIKLMNPQRSTVWY")
+    aa_validity = []
+    for seq in valid_sequences:
+        valid_letters = sum(1 for aa in seq if aa in valid_aas)
+        aa_validity.append(valid_letters / max(1, len(seq)))
+    
+    if aa_validity:
+        avg_validity = sum(aa_validity) / len(aa_validity)
+        metrics["val/aa_validity"] = avg_validity
+    
     if tm_scores_all:
         tm_avg = float(np.mean(tm_scores_all))
         tm_min = float(np.min(tm_scores_all))
@@ -154,8 +228,6 @@ def validate(model, cfg):
             "val/tm_min": tm_min,
             "val/tm_max": tm_max,
         })
-    else:
-        tm_avg = 0.0
     
     if pTMs:
         pTM_avg = float(np.mean(pTMs))
@@ -179,16 +251,18 @@ def validate(model, cfg):
     if metrics:
         wandb.log(metrics)
 
-    # Return whatever metric we have for early stopping
-    # Prefer TM-score if available, otherwise try pLDDT or bit-score
+    # Return the best metric we have for early stopping
     if tm_scores_all:
-        return tm_avg
+        return float(np.mean(tm_scores_all))
     elif avg_pLDDTs:
         return float(np.mean(avg_pLDDTs))
     elif bit_scores:
         return float(np.mean(bit_scores))
+    elif aa_validity:
+        return float(np.mean(aa_validity))
     else:
-        return float(np.random.rand())  # Fallback 
+        # If we have no metrics, return a poor score to indicate failure
+        return 0.0
 
 if __name__ == "__main__":
     print("Testing validation functionality...")

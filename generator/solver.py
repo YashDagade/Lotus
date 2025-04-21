@@ -153,7 +153,7 @@ class ODESolver:
         """
         device = next(self.model.parameters()).device
         emb_dim = self.cfg["flow"]["emb_dim"]
-        seq_len = self.cfg["flow"].get("seq_len", 1024)  # Default sequence length if not specified
+        seq_len = self.cfg["flow"].get("seq_len", 1500)  # Default sequence length of 1500 to match dataset constraints (min 900, max 1500)
         
         # Start from random Gaussian noise
         z0 = torch.randn(num_samples, seq_len, emb_dim, device=device) * sigma
