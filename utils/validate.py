@@ -265,12 +265,12 @@ def validate(model, cfg):
         return 0.0
 
 if __name__ == "__main__":
-    print("Testing validation functionality...")
+    print("Testing ODE Solvers...")
     
     # Import locally to avoid circular imports
-    from generator.models import FlowMatchingNet
+    from flow_generator.models import FlowMatchingNet
     
-    # Create mock model and config
+    # Create a mock model
     mock_cfg = {
         "flow": {
             "emb_dim": 32,

@@ -3,21 +3,21 @@ import torch
 import os
 import sys
 from pathlib import Path
-from generator.embed_sequences import embed
-from generator.train import train
-from generator.downstream import evaluate_downstream
-from generator.solver import sample_sequences
+from flow_generator.embed_sequences import embed
+from flow_generator.train import train
+from utils.downstream import evaluate_downstream
+from flow_generator.solver import sample_sequences
 from utils.mmseqs_split import split_clusters
-from generator.models import FlowMatchingNet
+from flow_generator.models import FlowMatchingNet
 
 # 1. Load config & W&B
 try:
-    cfg = yaml.safe_load(open("config.yaml")) # hence cfg is a dict with all the config parameters specified in the YAML!!!
+    cfg = yaml.safe_load(open("flow_config.yaml")) # hence cfg is a dict with all the config parameters specified in the YAML!!!
 except FileNotFoundError:
-    print("Error: config.yaml not found in the current directory")
+    print("Error: flow_config.yaml not found in the current directory")
     sys.exit(1)
 except yaml.YAMLError as e:
-    print(f"Error parsing config.yaml: {e}")
+    print(f"Error parsing flow_config.yaml: {e}")
     sys.exit(1)
 
 # Initialize wandb

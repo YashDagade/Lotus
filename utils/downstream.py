@@ -3,8 +3,8 @@ import tempfile
 import shutil
 import torch
 import wandb
-from .decode import decode_latents
-from .solver import ODESolver
+from flow_generator.decode import decode_latents
+from flow_generator.solver import ODESolver
 
 def evaluate_downstream(cfg):
     """
@@ -16,7 +16,7 @@ def evaluate_downstream(cfg):
       5. Log everything to W&B and return metrics dict
     """
     print("Running downstream evaluation...")
-    from .models import FlowMatchingNet
+    from flow_generator.models import FlowMatchingNet
 
     # 1) Load model
     model_path = cfg["best_model_path"]
@@ -69,7 +69,7 @@ def evaluate_downstream(cfg):
     metrics["downstream/fasta_path"] = fasta_path
 
     # 5) Structural + HMM evaluation
-    # — ColabFold
+    # — ColabFold
     try:
         from colabfold.batch import run as colabfold_run
         if cfg["downstream"].get("use_structural_validation", True):
@@ -90,10 +90,10 @@ def evaluate_downstream(cfg):
     except ImportError:
         print("ColabFold not installed; skipping structure prediction")
 
-    # — TM‐score against references
+    # — TM‐score against references
     refs = cfg["downstream"].get("ref_pdbs", [])
     if refs and valid:
-        from .validate import calculate_tm_score
+        from utils.validate import calculate_tm_score
         tm_scores = []
         for i in range(len(valid)):
             pdb_f = os.path.join(struct_dir, f"val_{i}_unrelaxed_rank_0.pdb")
@@ -107,10 +107,10 @@ def evaluate_downstream(cfg):
                 "downstream/tm_max": max(tm_scores),
             })
 
-    # — HMMER bit‐scores
+    # — HMMER bit‐scores
     hmm_profile = cfg["downstream"].get("hmm_profile","")
     if hmm_profile and os.path.exists(hmm_profile):
-        from .validate import hmm_bit_scores
+        from utils.validate import hmm_bit_scores
         bits = hmm_bit_scores(fasta_path, hmm_profile)
         if bits:
             metrics["downstream/hmm_bit_avg"]  = sum(bits)/len(bits)

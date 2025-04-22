@@ -1,0 +1,69 @@
+# EvoFlow Configuration File
+
+# Wandb tracking
+wandb:
+  entity: "ybg-ml"  # Replace with your W&B entity
+  project: "cas9_evoflow"
+  name: "evo_flow_ft_1"
+
+# Path to dataset
+dataset_path: "dataset/cas9.fasta"  # Replace with your dataset path
+
+# Directory structure
+dirs:
+  models: "models"
+  evoflow_models: "models/evoflow"
+  outputs: "outputs"
+  evoflow_outputs: "outputs/evoflow"
+
+# Clustering parameters
+cluster:
+  min_seq_id: 0.3
+  coverage: 0.8
+  frac_train: 0.8
+  frac_val: 0.1
+  splits_dir: "dataset/splits"
+  seed: 42
+  cleanup: false
+
+# Model checkpoint
+model_checkpoint: "fredzzp/EvoFlow-650M-context-3070"
+
+# EvoFlow specific parameters
+evoflow:
+  # Training parameters
+  batch_size: 8
+  epochs: 100
+  learning_rate: 5e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  max_length: 1024
+  patience: 5
+  log_interval: 10
+  num_workers: 4
+  model_dir: "models/evoflow"
+  
+  # Generation parameters
+  temperature: 1.0
+  top_k: 50
+  top_p: 0.95
+
+# Sampling parameters
+sampling:
+  num_samples: 100
+  output_dir: "outputs/evoflow/samples"
+  temperature: 1.0
+
+# Downstream evaluation
+downstream:
+  num_samples: 20
+  use_structural_validation: true
+  model_type: "AlphaFold2-ptm"
+  num_recycles: 1
+
+# Random seed for reproducibility
+seed: 42
+
+# Best model path (needed for downstream evaluation)
+best_model_path: "models/evoflow/evoflow_best.pt" 

@@ -211,7 +211,7 @@ def sample_sequences(model, solver, cfg, num_samples=100, method='rk4', steps=10
     Returns:
         List of sampled sequences
     """
-    from generator.decode import decode_latents
+    from flow_generator.decode import decode_latents
     
     # Sample latent vectors
     latents = solver.sample_latents(num_samples, method=method, steps=steps, verbose=True)
@@ -237,92 +237,3 @@ def sample_sequences(model, solver, cfg, num_samples=100, method='rk4', steps=10
         print(f"Saved {len(sequences)} sequences to {file_path}")
     
     return sequences 
-
-if __name__ == "__main__":
-    print("Testing ODE Solvers...")
-    
-    # Import locally to avoid circular imports
-    from generator.models import FlowMatchingNet
-    
-    # Create a mock model
-    class MockModel(torch.nn.Module):
-        def __init__(self, dim=32):
-            super().__init__()
-            self.dim = dim
-            # Simple MLP for testing
-            self.net = torch.nn.Sequential(
-                torch.nn.Linear(dim+1, dim),
-                torch.nn.GELU(),
-                torch.nn.Linear(dim, dim)
-            )
-            
-        def forward(self, z, t):
-            # Simple vector field for testing
-            # v(z,t) = -z*t
-            t_expanded = t.unsqueeze(1).expand(-1, z.size(1))
-            return -z * t_expanded
-    
-    # Create test configuration
-    mock_cfg = {
-        "flow": {
-            "emb_dim": 32
-        }
-    }
-    
-    # Initialize model and solver
-    dim = mock_cfg["flow"]["emb_dim"]
-    model = MockModel(dim)
-    solver = ODESolver(model, mock_cfg)
-    
-    # Test different ODE solvers
-    batch_size = 3
-    z0 = torch.ones(batch_size, dim)  # Start with ones for predictable behavior
-    
-    try:
-        # Test Euler
-        print("\nTesting Euler integration...")
-        z_euler = solver.euler_integrate(z0, steps=10, verbose=False)
-        print(f"Euler result shape: {z_euler.shape}")
-        print(f"Start norm: {z0.norm(dim=1).mean().item()}")
-        print(f"End norm: {z_euler.norm(dim=1).mean().item()}")
-        
-        # Test Heun
-        print("\nTesting Heun integration...")
-        z_heun = solver.heun_integrate(z0, steps=10, verbose=False)
-        print(f"Heun result shape: {z_heun.shape}")
-        print(f"End norm: {z_heun.norm(dim=1).mean().item()}")
-        
-        # Test RK4
-        print("\nTesting RK4 integration...")
-        z_rk4 = solver.rk4_integrate(z0, steps=10, verbose=False)
-        print(f"RK4 result shape: {z_rk4.shape}")
-        print(f"End norm: {z_rk4.norm(dim=1).mean().item()}")
-        
-        # Test sampling with trajectory
-        print("\nTesting sampling with trajectory...")
-        z_traj = solver.sample_latents(
-            num_samples=batch_size,
-            method='euler',
-            steps=5,
-            return_trajectory=True,
-            verbose=False
-        )
-        print(f"Trajectory shape: {z_traj.shape}")
-        
-        # Test different methods
-        for method in ['euler', 'heun', 'rk4']:
-            print(f"\nTesting sampling with {method}...")
-            z_samples = solver.sample_latents(
-                num_samples=batch_size,
-                method=method,
-                steps=10,
-                verbose=False
-            )
-            print(f"{method} samples shape: {z_samples.shape}")
-            
-        print("\nAll ODE solver tests passed!")
-        
-    except Exception as e:
-        print(f"Error during testing: {e}")
-    
-    print("Test finished.") 
