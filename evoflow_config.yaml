@@ -2,12 +2,12 @@
 
 # Wandb tracking
 wandb:
-  entity: "ybg-ml"  # Replace with your W&B entity
+  entity: "programmablebio"
   project: "cas9_evoflow"
-  name: "evo_flow_ft_1"
+  name: "evo_flow_full_dataset_3"
 
 # Path to dataset
-dataset_path: "dataset/cas9.fasta"  # Replace with your dataset path
+dataset_path: "/home/hice1/pponnusamy7/scratch/Lotus/dataset/cas9_uniprot.fasta"
 
 # Directory structure
 dirs:
@@ -16,12 +16,13 @@ dirs:
   outputs: "outputs"
   evoflow_outputs: "outputs/evoflow"
 
-# Clustering parameters
+# Clustering parameters for train/val/test split
 cluster:
   min_seq_id: 0.3
   coverage: 0.8
   frac_train: 0.8
-  frac_val: 0.1
+  frac_val: 0.1  # Changed to proper split
+  frac_test: 0.1  # Added test split
   splits_dir: "dataset/splits"
   seed: 42
   cleanup: false
@@ -45,15 +46,15 @@ evoflow:
   model_dir: "models/evoflow"
   
   # Generation parameters
-  temperature: 1.0
-  top_k: 50
-  top_p: 0.95
+  temperature: 0.8  # Reduced temperature for more focused sampling
+  top_k: 20  # since voacbulary size is 33
+  top_p: 0.9  # Slightly reduced for more focused sampling
 
 # Sampling parameters
 sampling:
   num_samples: 100
   output_dir: "outputs/evoflow/samples"
-  temperature: 1.0
+  temperature: 0.8  # Matched with evoflow temperature
 
 # Downstream evaluation
 downstream:

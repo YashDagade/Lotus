@@ -9,19 +9,46 @@ from pathlib import Path
 from Bio import SeqIO
 import random
 
+# Helper function for safer wandb logging
+def log_wandb(metrics):
+    try:
+        wandb.log(metrics)
+    except Exception as e:
+        print(f"Warning: Failed to log to wandb: {e}")
+
 class ProteinDataset(Dataset):
-    def __init__(self, fasta_file, tokenizer, max_length=1024):
+    def __init__(self, fasta_file, tokenizer, max_length=1024, mask_prob=0.15):
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.mask_prob = mask_prob
         self.sequences = []
         
+        # Check if file exists
+        if not os.path.exists(fasta_file):
+            print(f"Warning: FASTA file not found: {fasta_file}")
+            return
+            
         # Load sequences from FASTA file
-        for record in SeqIO.parse(fasta_file, "fasta"):
-            seq = str(record.seq)
-            if len(seq) <= self.max_length - 2:  # Account for special tokens
-                self.sequences.append(seq)
-        
-        print(f"Loaded {len(self.sequences)} sequences from {fasta_file}")
+        try:
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                seq = str(record.seq)
+                # Filter out invalid sequences (too short or non-standard amino acids)
+                if len(seq) <= self.max_length - 2 and len(seq) >= 10:  # Account for special tokens
+                    # Check for standard amino acids (optional)
+                    if all(aa in "ACDEFGHIKLMNPQRSTVWY" for aa in seq):
+                        self.sequences.append(seq)
+            
+            print(f"Loaded {len(self.sequences)} valid sequences from {fasta_file}")
+            
+            # Print sequence length statistics if we have sequences
+            if self.sequences:
+                lengths = [len(seq) for seq in self.sequences]
+                print(f"Sequence length stats: min={min(lengths)}, max={max(lengths)}, avg={sum(lengths)/len(lengths):.1f}")
+                
+        except Exception as e:
+            print(f"Error loading sequences from {fasta_file}: {e}")
+            import traceback
+            traceback.print_exc()
     
     def __len__(self):
         return len(self.sequences)
@@ -30,11 +57,15 @@ class ProteinDataset(Dataset):
         seq = self.sequences[idx]
         
         # Tokenize the sequence
-        encoding = self.tokenizer(seq, 
-                                 truncation=True,
-                                 max_length=self.max_length,
-                                 padding="max_length",
-                                 return_tensors="pt")
+        # Make sure special tokens are added
+        encoding = self.tokenizer(
+            seq, 
+            truncation=True,
+            max_length=self.max_length,
+            padding="max_length",
+            return_tensors="pt",
+            add_special_tokens=True
+        )
         
         # Remove batch dimension that the tokenizer adds
         item = {key: val.squeeze(0) for key, val in encoding.items()}
@@ -46,14 +77,19 @@ class ProteinDataset(Dataset):
         # Create random array of floats with equal dimensions to input_ids
         rand = torch.rand(input_ids.shape)
         
-        # Create mask array
-        mask_arr = (rand < 0.15) * (input_ids != self.tokenizer.cls_token_id) * (input_ids != self.tokenizer.sep_token_id) * (input_ids != self.tokenizer.pad_token_id)
+        # Create mask array - avoid masking special tokens
+        cls_token_id = self.tokenizer.cls_token_id if self.tokenizer.cls_token_id is not None else 0
+        sep_token_id = self.tokenizer.sep_token_id if self.tokenizer.sep_token_id is not None else 2
+        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 1
+        
+        mask_arr = (rand < self.mask_prob) & (input_ids != cls_token_id) & (input_ids != sep_token_id) & (input_ids != pad_token_id)
         
         # Get indices of masked tokens
         selection = torch.flatten(mask_arr.nonzero()).tolist()
         
-        # Mask input_ids
-        input_ids[selection] = self.tokenizer.mask_token_id
+        # Mask input_ids with the mask token
+        mask_token_id = self.tokenizer.mask_token_id if self.tokenizer.mask_token_id is not None else 32
+        input_ids[selection] = mask_token_id
         
         item["input_ids"] = input_ids
         item["labels"] = labels
@@ -62,6 +98,9 @@ class ProteinDataset(Dataset):
 
 def train_evoflow(cfg):
     print("Starting EvoFlow fine-tuning...")
+    
+    # Check if W&B is active
+    wandb_enabled = wandb.run is not None
     
     # Set up random seeds for reproducibility
     seed = cfg.get("seed", 42)
@@ -81,39 +120,99 @@ def train_evoflow(cfg):
     
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
     model = AutoModelForMaskedLM.from_pretrained(model_checkpoint)
+    
+    # Print model details
+    print(f"Model architecture: {model.__class__.__name__}")
+    print(f"Vocabulary size: {len(tokenizer)}")
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    
+    # Check if tokenizer special tokens are properly set
+    if tokenizer.cls_token_id is None or tokenizer.sep_token_id is None or tokenizer.mask_token_id is None:
+        print("Warning: Some special tokens are not properly set in the tokenizer")
+        print(f"CLS token: {tokenizer.cls_token_id}")
+        print(f"SEP token: {tokenizer.sep_token_id}")
+        print(f"MASK token: {tokenizer.mask_token_id}")
+        print(f"PAD token: {tokenizer.pad_token_id}")
+        
+        # Use defaults from ESM model if needed
+        if tokenizer.cls_token_id is None and hasattr(tokenizer, "cls_token"):
+            tokenizer.cls_token_id = 0  # <cls>
+        if tokenizer.sep_token_id is None and hasattr(tokenizer, "sep_token"):
+            tokenizer.sep_token_id = 2  # <eos>
+        if tokenizer.mask_token_id is None and hasattr(tokenizer, "mask_token"):
+            tokenizer.mask_token_id = 32  # <mask>
+        if tokenizer.pad_token_id is None and hasattr(tokenizer, "pad_token"):
+            tokenizer.pad_token_id = 1  # <pad>
+            
+        print("Updated tokenizer special tokens:")
+        print(f"CLS token: {tokenizer.cls_token_id}")
+        print(f"SEP token: {tokenizer.sep_token_id}")
+        print(f"MASK token: {tokenizer.mask_token_id}")
+        print(f"PAD token: {tokenizer.pad_token_id}")
+    
     model.to(device)
     
     # Set up datasets
     train_file = os.path.join(cfg["cluster"]["splits_dir"], "train.fasta")
     val_file = os.path.join(cfg["cluster"]["splits_dir"], "val.fasta")
     
+    print(f"Loading training data from {train_file}")
     train_dataset = ProteinDataset(train_file, tokenizer, max_length=cfg["evoflow"].get("max_length", 1024))
+    print(f"Loading validation data from {val_file}")
     val_dataset = ProteinDataset(val_file, tokenizer, max_length=cfg["evoflow"].get("max_length", 1024))
     
+    # Log dataset info
+    print(f"Training dataset: {len(train_dataset)} sequences")
+    print(f"Validation dataset: {len(val_dataset)} sequences")
+    
+    if len(train_dataset) == 0:
+        print("Error: No training sequences found!")
+        return None
+    
+    if len(val_dataset) == 0:
+        print("Error: No validation sequences found!")
+        return None
+    
+    # Get a sample to inspect dimensions
+    sample = train_dataset[0]
+    input_shape = sample["input_ids"].shape
+    print(f"Input shape: {input_shape} (sequence length)")
+    
     # Set up data loaders
+    batch_size = cfg["evoflow"].get("batch_size", 8)
+    print(f"Using batch size: {batch_size}")
+    
     train_loader = DataLoader(
         train_dataset,
-        batch_size=cfg["evoflow"].get("batch_size", 8),
+        batch_size=batch_size,
         shuffle=True,
         num_workers=cfg["evoflow"].get("num_workers", 4)
     )
     
     val_loader = DataLoader(
         val_dataset,
-        batch_size=cfg["evoflow"].get("batch_size", 8),
+        batch_size=batch_size,
         shuffle=False,
         num_workers=cfg["evoflow"].get("num_workers", 4)
     )
     
+    # Log dataloader info
+    print(f"Training batches: {len(train_loader)}")
+    print(f"Validation batches: {len(val_loader)}")
+    
     # Set up optimizer and scheduler
+    learning_rate = cfg["evoflow"].get("learning_rate", 5e-5)
+    print(f"Learning rate: {learning_rate}")
+    
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=cfg["evoflow"].get("learning_rate", 5e-5),
+        lr=learning_rate,
         weight_decay=cfg["evoflow"].get("weight_decay", 0.01)
     )
     
     total_steps = len(train_loader) * cfg["evoflow"].get("epochs", 30)
     warmup_steps = int(total_steps * cfg["evoflow"].get("warmup_ratio", 0.1))
+    print(f"Training steps: {total_steps}, Warmup steps: {warmup_steps}")
     
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
@@ -123,16 +222,19 @@ def train_evoflow(cfg):
     
     # Set up training variables
     best_val_loss = float('inf')
-    patience = cfg["evoflow"].get("patience", 3)
+    epochs = cfg["evoflow"].get("epochs", 30)
+    patience = cfg["evoflow"].get("patience", 5)
+    print(f"Training for {epochs} epochs with patience {patience}")
     patience_counter = 0
     
     # Create directory for saving models
     model_dir = cfg["evoflow"].get("model_dir", "models/evoflow")
     os.makedirs(model_dir, exist_ok=True)
+    print(f"Models will be saved to: {model_dir}")
     
     # Training loop
-    for epoch in range(cfg["evoflow"].get("epochs", 30)):
-        print(f"Starting epoch {epoch+1}/{cfg['evoflow'].get('epochs', 30)}")
+    for epoch in range(epochs):
+        print(f"Starting epoch {epoch+1}/{epochs}")
         
         # Training phase
         model.train()
@@ -164,11 +266,12 @@ def train_evoflow(cfg):
             
             # Log batch metrics
             if train_steps % cfg["evoflow"].get("log_interval", 10) == 0:
-                wandb.log({
-                    "train/batch_loss": loss.item(),
-                    "train/learning_rate": scheduler.get_last_lr()[0],
-                    "train/epoch": epoch + (train_steps / len(train_loader)),
-                })
+                if wandb_enabled:
+                    log_wandb({
+                        "train/batch_loss": loss.item(),
+                        "train/learning_rate": scheduler.get_last_lr()[0],
+                        "train/epoch": epoch + (train_steps / len(train_loader)),
+                    })
         
         # Calculate average training loss
         avg_train_loss = train_loss / train_steps
@@ -195,13 +298,14 @@ def train_evoflow(cfg):
         avg_val_loss = val_loss / val_steps
         
         # Log epoch metrics
-        wandb.log({
-            "train/epoch_loss": avg_train_loss,
-            "val/epoch_loss": avg_val_loss,
-            "epoch": epoch + 1,
-        })
-        
         print(f"Epoch {epoch+1} - Train loss: {avg_train_loss:.4f}, Val loss: {avg_val_loss:.4f}")
+        
+        if wandb_enabled:
+            log_wandb({
+                "train/epoch_loss": avg_train_loss,
+                "val/epoch_loss": avg_val_loss,
+                "epoch": epoch + 1,
+            })
         
         # Save checkpoint
         checkpoint_path = os.path.join(model_dir, f"evoflow_epoch_{epoch+1}.pt")
@@ -212,6 +316,7 @@ def train_evoflow(cfg):
             'train_loss': avg_train_loss,
             'val_loss': avg_val_loss,
         }, checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}")
         
         # Early stopping check
         if avg_val_loss < best_val_loss:
@@ -228,8 +333,9 @@ def train_evoflow(cfg):
                 'val_loss': avg_val_loss,
             }, best_model_path)
             
-            print(f"New best model saved at {best_model_path}")
-            wandb.log({"val/best_loss": best_val_loss})
+            print(f"New best model saved at {best_model_path} with val_loss: {best_val_loss:.4f}")
+            if wandb_enabled:
+                log_wandb({"val/best_loss": best_val_loss})
         else:
             patience_counter += 1
             print(f"No improvement for {patience_counter}/{patience} epochs")
